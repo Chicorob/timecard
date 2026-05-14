@@ -44,7 +44,11 @@ def create_app() -> FastAPI:
         max_age=60 * 60 * 24 * 7,  # 7 days
     )
 
-    app.mount("/static", StaticFiles(directory=str(PACKAGE_ROOT / "static")), name="static")
+    static_dir = PACKAGE_ROOT / "static"
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    else:
+        logger.warning("Static files directory %s not found; /static will not be served", static_dir)
     app.include_router(auth_routes.router)
     app.include_router(entries_routes.router)
     app.include_router(audit_routes.router)
