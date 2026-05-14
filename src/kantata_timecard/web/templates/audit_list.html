@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="card">
+    <form method="get" action="/audit" class="filters">
+      <div>
+        <label>From</label>
+        <input type="date" name="date_from" value="{{ filters.date_from }}">
+      </div>
+      <div>
+        <label>To</label>
+        <input type="date" name="date_to" value="{{ filters.date_to }}">
+      </div>
+      <div>
+        <label>Action</label>
+        <select name="action">
+          <option value="">any</option>
+          <option value="update" {% if filters.action == "update" %}selected{% endif %}>update</option>
+          <option value="delete" {% if filters.action == "delete" %}selected{% endif %}>delete</option>
+          <option value="create" {% if filters.action == "create" %}selected{% endif %}>create</option>
+        </select>
+      </div>
+      <div>
+        <label>Actor email contains</label>
+        <input type="text" name="actor_email" value="{{ filters.actor_email }}" placeholder="e.g. @suttonscreek.com">
+      </div>
+      <div>
+        <label>Time entry ID</label>
+        <input type="number" name="time_entry_id" value="{{ filters.time_entry_id }}">
+      </div>
+      <button class="primary" type="submit">Filter</button>
+      <a class="btn" href="/audit">Reset</a>
+    </form>
+    <p class="muted" style="margin: 12px 0 0;">
+      {{ total }} total record{% if total != 1 %}s{% endif %} ·
+      Retention: {{ retention_years }} years (use <code>kantata-tc audit purge</code> on a schedule)
+    </p>
+  </div>
+
+  <div class="card" style="padding: 0; overflow: hidden;">
+    <table>
+      <thead>
+        <tr>
+          <th>When (UTC)</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Entry ID</th>
+          <th>Note</th>
+          <th>Before / After</th>
+          <th>IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td style="white-space: nowrap; font-variant-numeric: tabular-nums;">
+            {{ r.at.strftime("%Y-%m-%d %H:%M:%S") if r.at else "—" }}
+          </td>
+          <td>
+            {{ r.actor_name or "—" }}
+            {% if r.actor_email %}<br><span class="muted">{{ r.actor_email }}</span>{% endif %}
+          </td>
+          <td>
+            {% if r.action == "delete" %}
+              <span class="pill no">delete</span>
+            {% else %}
+              <span class="pill">{{ r.action }}</span>
+            {% endif %}
+          </td>
+          <td>{{ r.time_entry_id }}</td>
+          <td>{{ r.note or "" }}</td>
+          <td>
+            {% if r.before or r.after %}
+              <details>
+                <summary class="muted" style="cursor: pointer;">view diff</summary>
+                {% if r.before %}
+                  <div style="margin-top: 6px;"><strong>before:</strong>
+                    <pre style="margin: 4px 0; padding: 6px; background: #f4f4f5; border-radius: 4px; font-size: 12px; overflow: auto;">{{ r.before|tojson(indent=2) }}</pre>
+                  </div>
+                {% endif %}
+                {% if r.after %}
+                  <div><strong>after:</strong>
+                    <pre style="margin: 4px 0; padding: 6px; background: #f4f4f5; border-radius: 4px; font-size: 12px; overflow: auto;">{{ r.after|tojson(indent=2) }}</pre>
+                  </div>
+                {% endif %}
+              </details>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="muted" style="font-size: 12px;">{{ r.ip_address or "" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted" style="text-align: center; padding: 24px;">
+          No audit records match these filters.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if total_pages > 1 %}
+  <div class="card" style="display: flex; gap: 8px; align-items: center; justify-content: center;">
+    {% set qs = "&date_from=" ~ filters.date_from ~ "&date_to=" ~ filters.date_to ~ "&action=" ~ filters.action ~ "&actor_email=" ~ filters.actor_email ~ "&time_entry_id=" ~ filters.time_entry_id %}
+    {% if page > 1 %}
+      <a class="btn" href="/audit?page={{ page - 1 }}{{ qs }}">&larr; previous</a>
+    {% endif %}
+    <span class="muted">page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a class="btn" href="/audit?page={{ page + 1 }}{{ qs }}">next &rarr;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+{% endblock %}

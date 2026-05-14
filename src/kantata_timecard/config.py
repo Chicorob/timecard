@@ -11,8 +11,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    kantata_client_id: str
-    kantata_client_secret: str
+    # OAuth-app credentials are required for the web app's login flow,
+    # but the CLI never touches them. Default to "" so `kantata-tc` can
+    # run without a full web environment.
+    kantata_client_id: str = ""
+    kantata_client_secret: str = ""
     kantata_oauth_redirect_url: str = "http://localhost:8000/oauth/callback"
     kantata_api_base: str = "https://api.mavenlink.com/api/v1"
     kantata_authorize_url: str = "https://app.mavenlink.com/oauth/authorize"
@@ -21,8 +24,9 @@ class Settings(BaseSettings):
     kantata_admin_token: str | None = None
 
     database_url: str = "sqlite+aiosqlite:///./kantata_timecard.db"
-    session_secret: str
-    token_encryption_key: str
+    # Same rationale: required only for the web app at runtime.
+    session_secret: str = ""
+    token_encryption_key: str = ""
 
     base_url: str = "http://localhost:8000"
     log_level: str = "INFO"

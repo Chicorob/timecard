@@ -3,14 +3,18 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Annotated
 
 import typer
 from rich.console import Console
 from rich.table import Table
+from sqlalchemy import select
 
+from .. import audit as audit_log
+from ..db import init_db, sessionmaker_
 from ..kantata_client import KantataAPIError, KantataClient
+from ..models import AuditLog
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -250,6 +254,104 @@ def bulk_shift_dates(
                     console.print(f"[red]entry {e.get('id')} failed: {exc}[/red]")
                     err += 1
             console.print(f"[green]Shifted {ok}.[/green] [red]Failed {err}.[/red]")
+
+    _run(_run_it())
+
+
+audit_app = typer.Typer(
+    no_args_is_help=True, help="View and manage the audit log (5-year retention)."
+)
+app.add_typer(audit_app, name="audit")
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as e:
+        console.print(f"[red]invalid ISO date/time: {value}[/red]")
+        raise typer.Exit(code=1) from e
+
+
+@audit_app.command("list")
+def audit_list_cmd(
+    date_from: Annotated[str | None, typer.Option("--from", help="YYYY-MM-DD")] = None,
+    date_to: Annotated[str | None, typer.Option("--to", help="YYYY-MM-DD")] = None,
+    action: Annotated[
+        str | None, typer.Option(help="Filter by action (update, delete, create)")
+    ] = None,
+    actor: Annotated[
+        str | None, typer.Option(help="Filter where actor email contains this substring")
+    ] = None,
+    time_entry_id: Annotated[int | None, typer.Option(help="Filter by Kantata time entry ID")] = None,
+    limit: Annotated[int, typer.Option(help="Max rows to return")] = 100,
+):
+    """List audit-log records (most recent first)."""
+    async def _run_it():
+        await init_db()
+        async with sessionmaker_()() as session:
+            stmt = select(AuditLog).order_by(AuditLog.at.desc())
+            if (dt := _parse_iso(date_from)) is not None:
+                stmt = stmt.where(AuditLog.at >= dt)
+            if (dt := _parse_iso(date_to)) is not None:
+                stmt = stmt.where(AuditLog.at <= dt)
+            if action:
+                stmt = stmt.where(AuditLog.action == action)
+            if actor:
+                stmt = stmt.where(AuditLog.actor_email.ilike(f"%{actor}%"))
+            if time_entry_id is not None:
+                stmt = stmt.where(AuditLog.time_entry_id == time_entry_id)
+            stmt = stmt.limit(limit)
+
+            rows = (await session.execute(stmt)).scalars().all()
+
+            table = Table(show_lines=False, header_style="bold")
+            table.add_column("When (UTC)")
+            table.add_column("Actor")
+            table.add_column("Action")
+            table.add_column("Entry")
+            table.add_column("Note")
+            table.add_column("IP")
+            for r in rows:
+                table.add_row(
+                    r.at.strftime("%Y-%m-%d %H:%M") if r.at else "—",
+                    r.actor_email or r.actor_name or "—",
+                    r.action,
+                    str(r.time_entry_id),
+                    r.note or "",
+                    r.ip_address or "",
+                )
+            console.print(table)
+            console.print(f"[dim]{len(rows)} rows[/dim]")
+
+    _run(_run_it())
+
+
+@audit_app.command("purge")
+def audit_purge_cmd(
+    older_than_days: Annotated[
+        int,
+        typer.Option(
+            "--older-than-days",
+            help="Records older than this many days are deleted. Default: 1825 (5 years).",
+        ),
+    ] = audit_log.RETENTION_DAYS,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
+):
+    """Enforce the 5-year retention policy by deleting old audit records."""
+    cutoff = datetime.now() - timedelta(days=older_than_days)
+    if not yes and not typer.confirm(
+        f"Permanently delete audit records older than {older_than_days} days "
+        f"(before {cutoff.date().isoformat()})?"
+    ):
+        raise typer.Abort()
+
+    async def _run_it():
+        await init_db()
+        async with sessionmaker_()() as session:
+            deleted = await audit_log.purge_older_than(session, days=older_than_days)
+            console.print(f"[green]Deleted {deleted} audit record(s).[/green]")
 
     _run(_run_it())
 

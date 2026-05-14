@@ -34,6 +34,11 @@ def _format_hours(minutes: int | None) -> str:
     return f"{minutes / 60:.2f}"
 
 
+def _request_meta(request: Request) -> tuple[str | None, str | None]:
+    ip = request.client.host if request.client else None
+    return ip, request.headers.get("user-agent")
+
+
 @router.get("/entries", response_class=HTMLResponse)
 async def list_entries(
     request: Request,
@@ -85,6 +90,7 @@ async def edit_entry_form(
 
 @router.post("/entries/{entry_id}")
 async def update_entry(
+    request: Request,
     entry_id: int,
     user: Annotated[KantataUser, Depends(current_user)],
     client: Annotated[KantataClient, Depends(kantata_client_for_user)],
@@ -113,13 +119,16 @@ async def update_entry(
     except KantataAPIError as e:
         raise HTTPException(status_code=e.status_code or 502, detail=str(e)) from e
 
+    ip, ua = _request_meta(request)
     await audit_log.record(
         session,
-        user_id=user.id,
+        user=user,
         action="update",
         time_entry_id=entry_id,
         before={k: before.get(k) for k in fields.keys()},
         after={k: after.get(k) for k in fields.keys()},
+        ip_address=ip,
+        user_agent=ua,
     )
     await session.commit()
 
@@ -128,6 +137,7 @@ async def update_entry(
 
 @router.post("/entries/{entry_id}/delete")
 async def delete_entry(
+    request: Request,
     entry_id: int,
     user: Annotated[KantataUser, Depends(current_user)],
     client: Annotated[KantataClient, Depends(kantata_client_for_user)],
@@ -139,12 +149,15 @@ async def delete_entry(
     except KantataAPIError as e:
         raise HTTPException(status_code=e.status_code or 502, detail=str(e)) from e
 
+    ip, ua = _request_meta(request)
     await audit_log.record(
         session,
-        user_id=user.id,
+        user=user,
         action="delete",
         time_entry_id=entry_id,
         before=before,
+        ip_address=ip,
+        user_agent=ua,
     )
     await session.commit()
     return RedirectResponse(url="/entries", status_code=303)
@@ -152,11 +165,12 @@ async def delete_entry(
 
 @router.post("/entries/bulk")
 async def bulk_update(
+    request: Request,
     user: Annotated[KantataUser, Depends(current_user)],
     client: Annotated[KantataClient, Depends(kantata_client_for_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
     ids: str = Form(...),
-    action: str = Form(...),  # "update" | "delete"
+    action: str = Form(...),
     hours: str = Form(""),
     date_performed: str = Form(""),
     notes: str = Form(""),
@@ -168,11 +182,19 @@ async def bulk_update(
     if not entry_ids:
         raise HTTPException(status_code=400, detail="no IDs provided")
 
+    ip, ua = _request_meta(request)
+
     if action == "delete":
         await client.delete_time_entries(entry_ids)
         for entry_id in entry_ids:
             await audit_log.record(
-                session, user_id=user.id, action="delete", time_entry_id=entry_id, note="bulk"
+                session,
+                user=user,
+                action="delete",
+                time_entry_id=entry_id,
+                note="bulk",
+                ip_address=ip,
+                user_agent=ua,
             )
         await session.commit()
         return RedirectResponse(url="/entries", status_code=303)
@@ -200,16 +222,21 @@ async def bulk_update(
             after = await client.update_time_entry(entry_id, fields)
             await audit_log.record(
                 session,
-                user_id=user.id,
+                user=user,
                 action="update",
                 time_entry_id=entry_id,
                 after={k: after.get(k) for k in fields.keys()},
                 note="bulk",
+                ip_address=ip,
+                user_agent=ua,
             )
         except KantataAPIError as e:
             errors.append(f"{entry_id}: {e}")
     await session.commit()
 
     if errors:
-        raise HTTPException(status_code=207, detail={"errors": errors, "applied": len(entry_ids) - len(errors)})
+        raise HTTPException(
+            status_code=207,
+            detail={"errors": errors, "applied": len(entry_ids) - len(errors)},
+        )
     return RedirectResponse(url="/entries", status_code=303)

@@ -13,6 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from ..config import get_settings
 from ..db import init_db
 from ..kantata_client import KantataAPIError
+from .routes import audit as audit_routes
 from .routes import auth as auth_routes
 from .routes import entries as entries_routes
 
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(PACKAGE_ROOT / "static")), name="static")
     app.include_router(auth_routes.router)
     app.include_router(entries_routes.router)
+    app.include_router(audit_routes.router)
 
     @app.get("/", response_class=HTMLResponse)
     async def landing(request: Request):

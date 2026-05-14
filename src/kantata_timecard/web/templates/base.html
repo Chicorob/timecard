@@ -56,6 +56,8 @@
     <h1>Kantata Time-Card Adjustments</h1>
     <nav>
       {% if request.session.get("user_id") %}
+        <a href="/entries">Entries</a>
+        <a href="/audit">Audit log</a>
         <span class="muted">{{ request.session.get("user_name") }}</span>
         <form method="post" action="/logout" class="inline">
           <button type="submit">Sign out</button>
