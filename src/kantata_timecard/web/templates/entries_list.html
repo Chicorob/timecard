@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="card">
+    <form method="get" action="/entries" class="filters">
+      <div>
+        <label>From date</label>
+        <input type="date" name="date_from" value="{{ filters.date_from }}">
+      </div>
+      <div>
+        <label>To date</label>
+        <input type="date" name="date_to" value="{{ filters.date_to }}">
+      </div>
+      <div>
+        <label>Workspace (project) ID</label>
+        <input type="number" name="workspace_id" value="{{ filters.workspace_id }}" placeholder="e.g. 12345">
+      </div>
+      <div>
+        <label>User ID</label>
+        <input type="number" name="user_id" value="{{ filters.user_id }}" placeholder="leave blank for all">
+      </div>
+      <button class="primary" type="submit">Filter</button>
+      <a class="btn" href="/entries">Reset</a>
+    </form>
+  </div>
+
+  <form id="bulk-form" method="post" action="/entries/bulk">
+    <input type="hidden" name="ids" id="bulk-ids">
+
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 32px;"><input type="checkbox" id="select-all"></th>
+            <th>Date</th>
+            <th>User</th>
+            <th>Project</th>
+            <th>Task</th>
+            <th style="text-align: right;">Hours</th>
+            <th>Billable</th>
+            <th>Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+          {% set inc = e.get("__includes__", {}) %}
+          {% set users_idx = inc.get("users", {}) %}
+          {% set wks_idx = inc.get("workspaces", {}) %}
+          {% set stories_idx = inc.get("stories", {}) %}
+          {% set entry_user = users_idx.get(e.get("user_id")|string, {}) %}
+          {% set entry_wks = wks_idx.get(e.get("workspace_id")|string, {}) %}
+          {% set entry_story = stories_idx.get(e.get("story_id")|string, {}) %}
+          <tr>
+            <td><input type="checkbox" class="row-check" value="{{ e.id }}"></td>
+            <td>{{ e.get("date_performed", "") }}</td>
+            <td>{{ entry_user.get("full_name", "—") }}</td>
+            <td>{{ entry_wks.get("title", "—") }}</td>
+            <td>{{ entry_story.get("title", "—") }}</td>
+            <td style="text-align: right;">{{ format_hours(e.get("time_in_minutes")) }}</td>
+            <td>
+              {% if e.get("billable") %}
+                <span class="pill">yes</span>
+              {% else %}
+                <span class="pill no">no</span>
+              {% endif %}
+            </td>
+            <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                title="{{ e.get('notes', '') }}">
+              {{ e.get("notes", "") }}
+            </td>
+            <td class="actions">
+              <a class="btn" href="/entries/{{ e.id }}/edit">Edit</a>
+              <form method="post" action="/entries/{{ e.id }}/delete" class="inline"
+                    onsubmit="return confirm('Delete this time entry permanently?');">
+                <button class="danger" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="muted" style="text-align: center; padding: 24px;">
+            No time entries match these filters.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="bulk-bar" id="bulk-bar">
+      <span class="count" id="bulk-count">0 selected</span>
+      <div class="filters" style="flex: 1;">
+        <div>
+          <label style="color: #cbd5e1;">Set hours</label>
+          <input type="text" name="hours" placeholder="leave blank to skip">
+        </div>
+        <div>
+          <label style="color: #cbd5e1;">Set date</label>
+          <input type="date" name="date_performed">
+        </div>
+        <div>
+          <label style="color: #cbd5e1;">Move to task (story) ID</label>
+          <input type="number" name="story_id">
+        </div>
+        <div>
+          <label style="color: #cbd5e1;">Move to project ID</label>
+          <input type="number" name="workspace_id">
+        </div>
+        <div>
+          <label style="color: #cbd5e1;">Billable</label>
+          <select name="billable">
+            <option value="">— no change —</option>
+            <option value="true">yes</option>
+            <option value="false">no</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit" name="action" value="update" class="primary">Apply</button>
+      <button type="submit" name="action" value="delete" class="danger"
+              onclick="return confirm('Delete all selected entries permanently?');">Delete all</button>
+    </div>
+  </form>
+
+  <script>
+    const checks = () => document.querySelectorAll(".row-check");
+    const bar = document.getElementById("bulk-bar");
+    const count = document.getElementById("bulk-count");
+    const idsField = document.getElementById("bulk-ids");
+    function sync() {
+      const selected = Array.from(checks()).filter(c => c.checked).map(c => c.value);
+      idsField.value = selected.join(",");
+      count.textContent = `${selected.length} selected`;
+      bar.classList.toggle("active", selected.length > 0);
+    }
+    document.getElementById("select-all").addEventListener("change", e => {
+      checks().forEach(c => c.checked = e.target.checked); sync();
+    });
+    checks().forEach(c => c.addEventListener("change", sync));
+  </script>
+{% endblock %}

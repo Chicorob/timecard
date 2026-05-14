@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+  {% set inc = entry.get("__includes__", {}) %}
+  {% set users_idx = inc.get("users", {}) %}
+  {% set wks_idx = inc.get("workspaces", {}) %}
+  {% set stories_idx = inc.get("stories", {}) %}
+  {% set entry_user = users_idx.get(entry.get("user_id")|string, {}) %}
+  {% set entry_wks = wks_idx.get(entry.get("workspace_id")|string, {}) %}
+  {% set entry_story = stories_idx.get(entry.get("story_id")|string, {}) %}
+
+  <div class="card" style="max-width: 720px;">
+    <h2 style="margin-top: 0;">Edit time entry #{{ entry.id }}</h2>
+    <p class="muted">
+      Owner: <strong>{{ entry_user.get("full_name", "—") }}</strong> ·
+      Currently in <strong>{{ entry_wks.get("title", "—") }}</strong> /
+      <strong>{{ entry_story.get("title", "—") }}</strong>
+    </p>
+
+    <form method="post" action="/entries/{{ entry.id }}">
+      <div class="filters" style="margin-bottom: 16px;">
+        <div>
+          <label>Hours</label>
+          <input type="text" name="hours" value="{{ format_hours(entry.get('time_in_minutes')) }}">
+        </div>
+        <div>
+          <label>Date performed</label>
+          <input type="date" name="date_performed" value="{{ entry.get('date_performed', '') }}">
+        </div>
+        <div>
+          <label>Billable</label>
+          <select name="billable">
+            <option value="true" {% if entry.get("billable") %}selected{% endif %}>yes</option>
+            <option value="false" {% if not entry.get("billable") %}selected{% endif %}>no</option>
+          </select>
+        </div>
+      </div>
+      <div class="filters" style="margin-bottom: 16px;">
+        <div>
+          <label>Project (workspace) ID</label>
+          <input type="number" name="workspace_id" value="{{ entry.get('workspace_id', '') }}">
+        </div>
+        <div>
+          <label>Task (story) ID</label>
+          <input type="number" name="story_id" value="{{ entry.get('story_id', '') }}">
+        </div>
+      </div>
+      <div style="margin-bottom: 16px;">
+        <label>Notes</label>
+        <textarea name="notes" style="width: 100%;">{{ entry.get("notes", "") }}</textarea>
+      </div>
+      <div class="actions">
+        <button type="submit" class="primary">Save</button>
+        <a class="btn" href="/entries">Cancel</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}
